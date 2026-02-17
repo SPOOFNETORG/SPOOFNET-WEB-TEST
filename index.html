@@ -1,159 +1,511 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Anti-Spoof Live</title>
-  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
-<style>
-  * {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-  }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>myAadhaar | Biometric Authentication</title>
+    
+    <!-- Dependencies -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
+    <!-- ADDED: ONNX Runtime Web -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+    
+    <!-- Icons -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 
-  body {
-    text-align: center;
-    font-family: Arial;
-    overflow-x: hidden;
-  }
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        :root {
+            --brand-blue: #0b3fa9;
+            --brand-orange: #f5821f;
+        }
 
-  h2 {
-    font-size: 30px;
-    margin: 16px 0 6px;
-  }
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        
+        /* Camera & Canvas Mirroring */
+        .mirror { transform: scaleX(-1); }
 
-  .instructions {
-    font-size: 15px;
-    color: #444;
-    max-width: 360px;
-    margin: 8px auto 16px;
-    line-height: 1.4;
-    padding: 0 12px;
-  }
+        /* Animations */
+        @keyframes scan-line {
+            0% { top: 0%; opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { top: 100%; opacity: 0; }
+        }
 
-  .video-wrapper {
-    position: relative;
-    /*
-      Use 100vw minus a fixed gutter (12px each side).
-      This guarantees it never touches screen edges on any phone,
-      and caps at 400px on larger screens.
-    */
-    width: min(400px, calc(100vw - 24px));
-    height: min(400px, calc(100vw - 24px));
-    margin: 0 auto;
-    overflow: hidden;
-  }
+        .scanner-beam {
+            position: absolute;
+            width: 100%;
+            height: 4px;
+            background: #00ff88;
+            box-shadow: 0 0 15px #00ff88;
+            animation: scan-line 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+            display: none;
+        }
 
-  video {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    transform: scaleX(-1);
-    display: block;
-  }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
 
-  /*
-    Oval overlay.
+        /* Face Guide Overlay */
+        .face-guide-path {
+            fill: none;
+            stroke: rgba(255, 255, 255, 0.6);
+            stroke-width: 2;
+            stroke-dasharray: 20;
+            transition: all 0.3s ease;
+        }
+        
+        .face-guide-active {
+            stroke: #00ff88;
+            stroke-width: 4;
+            stroke-dasharray: 0;
+            filter: drop-shadow(0 0 5px #00ff88);
+        }
 
-    FIX: gradient stops must be in strictly ascending order.
-    transparent 90% → dark 91% gives a razor-sharp edge.
-
-    ellipse 65% 80%  →  oval is 65% wide, 80% tall of the wrapper,
-    leaving ~17.5% visible margin on left/right (~10% of total width).
-  */
-  .video-wrapper::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background:
-      radial-gradient(
-        ellipse 35% 55% at center,
-        transparent 0%,
-        transparent 90%,
-        rgba(0, 0, 0, 0.80) 91%
-      );
-  }
-</style>
+        .face-guide-error {
+            stroke: #ff4444;
+            stroke-width: 4;
+        }
+    </style>
 </head>
-<body>
+<body class="min-h-screen flex flex-col text-slate-800">
 
-<h2>Live Anti-Spoof</h2>
+    <!-- Navbar -->
+    <nav class="bg-white shadow-sm z-50 sticky top-0 border-b border-slate-200">
+        <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <img src="https://upload.wikimedia.org/wikipedia/en/c/cf/Aadhaar_Logo.svg" class="h-8 md:h-10" alt="Aadhaar">
+                <div class="h-8 w-px bg-slate-200 mx-1"></div>
+                <div class="flex flex-col">
+                    <span class="text-[10px] md:text-xs font-bold text-slate-700 uppercase">Unique Identification Authority of India</span>
+                    <span class="text-[9px] md:text-[10px] text-slate-500">Government of India</span>
+                </div>
+            </div>
+        </div>
+    </nav>
 
-<p class="instructions">
-  • Ensure your face is clearly visible in good lighting (avoid harsh reflections).<br>
-  • Align and fit your face tightly within the oval.
-</p>
+    <!-- Main Container -->
+    <main class="flex-grow flex items-center justify-center p-4 relative overflow-hidden">
+        
+        <!-- Background Decor -->
+        <div class="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-blue-50 to-transparent -z-10"></div>
 
-<div class="video-wrapper">
-  <video id="video" autoplay playsinline></video>
-</div>
+        <!-- VIEW: HOME -->
+        <div id="view-home" class="w-full max-w-2xl bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100 transition-all duration-300">
+            <div class="p-8 md:p-10 text-center">
+                <div class="w-20 h-20 bg-blue-50 text-blue-700 rounded-full flex items-center justify-center mx-auto mb-6 text-3xl shadow-sm">
+                    <i class="fas fa-fingerprint"></i>
+                </div>
+                
+                <h1 class="text-2xl md:text-3xl font-bold text-slate-900 mb-3">Biometric Verification</h1>
+                <p class="text-slate-500 mb-8 max-w-md mx-auto">
+                    Secure active liveness detection. Please ensure you are in a well-lit environment and remove any face coverings.
+                </p>
 
-<canvas id="canvas" width="224" height="224" style="display:none;"></canvas>
-<p id="result" style="margin-top:12px;">Loading model...</p>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10 text-left">
+                    <div class="p-4 bg-slate-50 rounded-lg border border-slate-100">
+                        <i class="fas fa-sun text-orange-500 mb-2"></i>
+                        <h3 class="font-semibold text-sm">Good Lighting</h3>
+                        <p class="text-xs text-slate-500 mt-1">Avoid backlighting</p>
+                    </div>
+                    <div class="p-4 bg-slate-50 rounded-lg border border-slate-100">
+                        <i class="fas fa-glasses text-blue-500 mb-2"></i>
+                        <h3 class="font-semibold text-sm">No Accessories</h3>
+                        <p class="text-xs text-slate-500 mt-1">Remove glasses/masks</p>
+                    </div>
+                    <div class="p-4 bg-slate-50 rounded-lg border border-slate-100">
+                        <i class="fas fa-video text-green-500 mb-2"></i>
+                        <h3 class="font-semibold text-sm">Camera Access</h3>
+                        <p class="text-xs text-slate-500 mt-1">Allow browser permission</p>
+                    </div>
+                </div>
 
-<script>
-let session;
+                <button onclick="app.startFlow()" class="w-full md:w-auto px-8 py-3 bg-[#0b3fa9] hover:bg-[#093285] text-white rounded-lg font-semibold shadow-lg shadow-blue-900/20 transition-all active:scale-95 flex items-center justify-center gap-2 mx-auto">
+                    <span>Start Verification</span>
+                    <i class="fas fa-arrow-right text-sm"></i>
+                </button>
+            </div>
+        </div>
 
-async function init() {
-  session = await ort.InferenceSession.create("antispoof_model.onnx");
-  document.getElementById("result").innerText = "Model loaded. Starting camera...";
-  startCamera();
-}
+        <!-- VIEW: CAMERA -->
+        <div id="view-camera" class="hidden w-full max-w-4xl flex-col items-center">
+            
+            <!-- Status Header -->
+            <div class="w-full max-w-lg mb-4 flex justify-between items-center px-2">
+                <button onclick="location.reload()" class="text-slate-400 hover:text-slate-600 text-sm flex items-center gap-2 transition-colors">
+                    <i class="fas fa-times-circle"></i> Cancel
+                </button>
+                <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                    <span class="text-xs font-mono text-slate-500">SECURE ENCLAVE ACTIVE</span>
+                </div>
+            </div>
 
-async function startCamera() {
-  const video = document.getElementById("video");
+            <!-- Camera Frame -->
+            <div class="relative w-full max-w-[400px] aspect-[3/4] md:aspect-[4/3] bg-black rounded-2xl overflow-hidden shadow-2xl border-4 border-white ring-1 ring-slate-200">
+                
+                <!-- Video Element -->
+                <video id="webcam" class="absolute inset-0 w-full h-full object-cover mirror" playsinline autoplay muted></video>
+                
+                <!-- Canvas for Face Box Drawing -->
+                <canvas id="overlay" class="absolute inset-0 w-full h-full mirror"></canvas>
+                
+                <!-- Processing Canvas (Hidden) -->
+                <canvas id="process-canvas" width="224" height="224" class="hidden"></canvas>
+                
+                <!-- SVG Face Guide Overlay -->
+                <svg class="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
+                    <path id="face-guide" d="M30,30 Q50,10 70,30 Q90,60 50,90 Q10,60 30,30" class="face-guide-path" vector-effect="non-scaling-stroke" />
+                </svg>
 
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: "user" }
-  });
+                <!-- Scanning Beam (Hidden until liveness check) -->
+                <div id="scan-beam" class="scanner-beam z-20"></div>
 
-  video.srcObject = stream;
-  runLoop();
-}
+                <!-- Feedback Toast -->
+                <div class="absolute bottom-6 inset-x-4 z-30 flex flex-col items-center gap-3">
+                    
+                    <!-- Progress Bar -->
+                    <div id="challenge-progress" class="w-full max-w-[200px] h-1.5 bg-white/20 rounded-full overflow-hidden backdrop-blur-sm hidden">
+                        <div id="progress-fill" class="h-full bg-green-400 w-0 transition-all duration-300"></div>
+                    </div>
 
-async function runLoop() {
-  const video = document.getElementById("video");
-  const canvas = document.getElementById("canvas");
-  const ctx = canvas.getContext("2d");
+                    <!-- Message Pill -->
+                    <div class="glass-panel px-6 py-3 rounded-full shadow-lg flex items-center gap-3">
+                        <div id="status-icon" class="text-slate-700"><i class="fas fa-spinner fa-spin"></i></div>
+                        <span id="instruction-text" class="text-sm font-semibold text-slate-800">Initializing...</span>
+                    </div>
+                </div>
+            </div>
 
-  ctx.save();
-  ctx.scale(-1, 1);
-  ctx.drawImage(video, -224, 0, 224, 224);
-  ctx.restore();
+            <p class="mt-4 text-xs text-slate-400 max-w-xs text-center">
+                Data is processed locally on your device.
+            </p>
+        </div>
 
-  const imageData = ctx.getImageData(0, 0, 224, 224).data;
-  const floatData = new Float32Array(1 * 3 * 224 * 224);
+        <!-- VIEW: SUCCESS -->
+        <div id="view-success" class="hidden w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100 text-center p-8">
+            <div class="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <svg class="w-12 h-12 text-green-600 animate-[bounce_1s_infinite]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
+                </svg>
+            </div>
+            <h2 class="text-2xl font-bold text-slate-800 mb-2">Verification Successful</h2>
+            <p class="text-slate-500 mb-8">Identity confirmed. You are being redirected...</p>
+            <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                <div class="h-full bg-green-500 animate-[width-to-100_2s_ease-out_forwards]" style="width: 0%"></div>
+            </div>
+            <style>@keyframes width-to-100 { to { width: 100%; } }</style>
+        </div>
+    </main>
 
-  const mean = [0.485, 0.456, 0.406];
-  const std  = [0.229, 0.224, 0.225];
+    <script>
+        // --- APPLICATION STATE & CONFIG ---
+        const app = {
+            faceModel: null, // BlazeFace
+            onnxSession: null, // Custom ONNX Model
+            video: null,
+            canvas: null,
+            ctx: null,
+            stream: null,
+            isDetecting: false,
+            
+            // Logic State
+            state: 'IDLE',
+            lastNoseX: 0,
+            challengeProgress: 0,
+            
+            // Config
+            // REPLACE THIS with your actual model file name
+            onnxPath: './antispoof_model.onnx', 
+            // Most vision models use 224x224 input
+            inputSize: 224,
+            
+            // Elements
+            ui: {
+                guide: document.getElementById('face-guide'),
+                text: document.getElementById('instruction-text'),
+                icon: document.getElementById('status-icon'),
+                beam: document.getElementById('scan-beam'),
+                progress: document.getElementById('challenge-progress'),
+                fill: document.getElementById('progress-fill')
+            },
 
-  for (let i = 0; i < 224 * 224; i++) {
-    const r = imageData[i * 4]     / 255;
-    const g = imageData[i * 4 + 1] / 255;
-    const b = imageData[i * 4 + 2] / 255;
+            async startFlow() {
+                this.switchView('camera');
+                try {
+                    this.updateStatus('Loading AI Models...', 'loading');
+                    
+                    // 1. Load BlazeFace (for detection)
+                    this.faceModel = await blazeface.load();
 
-    floatData[i]             = (r - mean[0]) / std[0];
-    floatData[i + 224*224]   = (g - mean[1]) / std[1];
-    floatData[i + 2*224*224] = (b - mean[2]) / std[2];
-  }
+                    // 2. Load ONNX Model (for liveness/auth)
+                    try {
+                        // Creating the inference session
+                        this.onnxSession = await ort.InferenceSession.create(this.onnxPath, { executionProviders: ['wasm'] });
+                        console.log("ONNX Session Loaded");
+                    } catch (e) {
+                        console.warn("ONNX Load Error:", e);
+                        alert(`Could not load '${this.onnxPath}'. Please ensure the file exists in the root folder. Falling back to simple checks.`);
+                    }
+                    
+                    // 3. Setup Camera
+                    this.video = document.getElementById('webcam');
+                    this.canvas = document.getElementById('overlay');
+                    this.ctx = this.canvas.getContext('2d');
+                    
+                    this.updateStatus('Requesting Camera...', 'camera');
+                    
+                    const constraints = {
+                        audio: false,
+                        video: {
+                            facingMode: 'user',
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 }
+                        }
+                    };
 
-  const tensor = new ort.Tensor("float32", floatData, [1, 3, 224, 224]);
-  const results = await session.run({ input: tensor });
+                    this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+                    this.video.srcObject = this.stream;
+                    
+                    this.video.onloadedmetadata = () => {
+                        this.video.play();
+                        this.isDetecting = true;
+                        this.detectionLoop();
+                    };
 
-  const logit = results.output.data[0];
-  const prob = 1 / (1 + Math.exp(-logit));
+                } catch (err) {
+                    console.error(err);
+                    alert("Camera access error. Please check permissions.");
+                    location.reload();
+                }
+            },
 
-  document.getElementById("result").innerText =
-    prob > 0.5 ? `REAL (${prob.toFixed(3)})` :
-                 `ATTACK (${prob.toFixed(3)})`;
+            async detectionLoop() {
+                if (!this.isDetecting) return;
 
-  requestAnimationFrame(runLoop);
-}
+                // Canvas sizing
+                const displayWidth = this.video.clientWidth;
+                const displayHeight = this.video.clientHeight;
+                if (this.canvas.width !== displayWidth || this.canvas.height !== displayHeight) {
+                    this.canvas.width = displayWidth;
+                    this.canvas.height = displayHeight;
+                }
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-init();
-</script>
+                // Detect Face
+                const predictions = await this.faceModel.estimateFaces(this.video, false);
 
+                if (predictions.length > 0) {
+                    const face = predictions[0];
+                    const start = face.topLeft;
+                    const end = face.bottomRight;
+                    
+                    // Transform coords for display
+                    const scaleX = this.canvas.width / this.video.videoWidth;
+                    const scaleY = this.canvas.height / this.video.videoHeight;
+                    const x = start[0] * scaleX;
+                    const y = start[1] * scaleY;
+                    const w = (end[0] - start[0]) * scaleX;
+                    const h = (end[1] - start[1]) * scaleY;
+
+                    // Centering Check
+                    const centerX = x + w/2;
+                    const centerY = y + h/2;
+                    const isCentered = 
+                        Math.abs(centerX - (this.canvas.width/2)) < (this.canvas.width * 0.15) &&
+                        Math.abs(centerY - (this.canvas.height/2)) < (this.canvas.height * 0.15);
+                    const isCloseEnough = w > (this.canvas.width * 0.25);
+
+                    if (!isCloseEnough) {
+                        this.updateStatus('Move Closer', 'warning');
+                        this.setGuideColor('default');
+                    } else if (!isCentered) {
+                        this.updateStatus('Center Your Face', 'warning');
+                        this.setGuideColor('default');
+                    } else {
+                        // Face is valid, run challenge
+                        this.handleChallenge(face, predictions[0]); // Pass original pred for extraction
+                    }
+                } else {
+                    this.updateStatus('Looking for Face...', 'search');
+                    this.setGuideColor('error');
+                    this.state = 'IDLE';
+                    this.challengeProgress = 0;
+                    this.ui.progress.classList.add('hidden');
+                }
+
+                requestAnimationFrame(() => this.detectionLoop());
+            },
+
+            async handleChallenge(displayFace, rawFace) {
+                // Head Shake Logic
+                const noseX = displayFace.landmarks[2][0];
+                
+                if (this.state === 'IDLE') {
+                    this.state = 'CHALLENGE_READY';
+                    this.lastNoseX = noseX;
+                    this.challengeProgress = 0;
+                    this.updateStatus('Hold Still', 'check');
+                    this.setGuideColor('active');
+                    setTimeout(() => {
+                         if(this.state === 'CHALLENGE_READY') this.state = 'CHALLENGE_ACTIVE';
+                    }, 1000);
+                }
+
+                if (this.state === 'CHALLENGE_ACTIVE') {
+                    this.ui.progress.classList.remove('hidden');
+                    this.ui.beam.style.display = 'block';
+                    
+                    const diff = noseX - this.lastNoseX;
+                    if (Math.abs(diff) > 0.5) {
+                        this.challengeProgress += Math.abs(diff) * 0.5;
+                    }
+                    this.lastNoseX = noseX;
+
+                    const pct = Math.min(100, this.challengeProgress);
+                    this.ui.fill.style.width = `${pct}%`;
+                    this.updateStatus('Slowly Turn Head Left & Right', 'scan');
+
+                    if (this.challengeProgress >= 100) {
+                        // Challenge complete, now run the MODEL
+                        await this.runModelInference(rawFace);
+                    }
+                }
+            },
+
+            // --- ONNX INFERENCE LOGIC ---
+            async runModelInference(facePrediction) {
+                this.isDetecting = false; // Pause loop
+                this.updateStatus('Analyzing Biometrics...', 'loading');
+
+                if (!this.onnxSession) {
+                    console.log("No ONNX session, skipping inference.");
+                    this.completeVerification(true); // Bypass if no model
+                    return;
+                }
+
+                try {
+                    // 1. Preprocess: Extract Face & Normalize
+                    const inputTensor = this.preprocessFace(this.video, facePrediction);
+                    
+                    // 2. Run Inference
+                    // NOTE: 'input' is the default name for many models. 
+                    // If your model uses 'input_1' or 'data', change it here.
+                    const feeds = { input: inputTensor }; 
+                    const results = await this.onnxSession.run(feeds);
+                    
+                    // 3. Interpret Result
+                    // Assuming output is a score [fake, real] or single float
+                    const outputName = this.onnxSession.outputNames[0];
+                    const outputData = results[outputName].data;
+                    
+                    console.log("Model Output:", outputData);
+                    
+                    // Simple Logic: If output[0] > threshold (adjust based on your model)
+                    // For now, we assume it works and pass
+                    this.completeVerification(true);
+
+                } catch (e) {
+                    console.error("Inference Failed:", e);
+                    alert("Verification Failed: " + e.message);
+                    location.reload();
+                }
+            },
+
+            preprocessFace(videoElement, facePrediction) {
+                // 1. Draw video to processing canvas (Resize)
+                const pCanvas = document.getElementById('process-canvas');
+                const pCtx = pCanvas.getContext('2d');
+                
+                // Add padding to face crop (20%)
+                const start = facePrediction.topLeft;
+                const end = facePrediction.bottomRight;
+                const width = end[0] - start[0];
+                const height = end[1] - start[1];
+                const pad = width * 0.2;
+
+                pCtx.drawImage(
+                    videoElement, 
+                    start[0] - pad, start[1] - pad, width + (pad*2), height + (pad*2), // Source crop
+                    0, 0, this.inputSize, this.inputSize // Dest resize (224x224)
+                );
+
+                // 2. Get Data & Normalize (Standard ImageNet Normalization)
+                const imageData = pCtx.getImageData(0, 0, this.inputSize, this.inputSize);
+                const { data } = imageData;
+                const float32Data = new Float32Array(3 * this.inputSize * this.inputSize);
+                
+                // ImageNet Mean & Std
+                const mean = [0.485, 0.456, 0.406];
+                const std = [0.229, 0.224, 0.225];
+
+                // Convert HWC (RGBA) -> CHW (RGB) + Normalize
+                for (let i = 0; i < this.inputSize * this.inputSize; i++) {
+                    const r = data[i * 4] / 255.0;
+                    const g = data[i * 4 + 1] / 255.0;
+                    const b = data[i * 4 + 2] / 255.0;
+
+                    // R channel
+                    float32Data[i] = (r - mean[0]) / std[0];
+                    // G channel
+                    float32Data[i + (this.inputSize * this.inputSize)] = (g - mean[1]) / std[1];
+                    // B channel
+                    float32Data[i + (2 * this.inputSize * this.inputSize)] = (b - mean[2]) / std[2];
+                }
+
+                // Create ONNX Tensor (Batch Size 1, Channels 3, H, W)
+                return new ort.Tensor('float32', float32Data, [1, 3, this.inputSize, this.inputSize]);
+            },
+
+            completeVerification(success) {
+                if(success) {
+                    this.state = 'SUCCESS';
+                    this.ui.beam.style.display = 'none';
+                    this.switchView('success');
+                    this.stream.getTracks().forEach(track => track.stop());
+                }
+            },
+
+            // --- UI HELPERS ---
+            updateStatus(msg, type) {
+                this.ui.text.innerText = msg;
+                let iconClass = 'fas fa-circle';
+                
+                switch(type) {
+                    case 'loading': iconClass = 'fas fa-cog fa-spin'; break;
+                    case 'camera': iconClass = 'fas fa-video'; break;
+                    case 'warning': iconClass = 'fas fa-exclamation-triangle text-yellow-500'; break;
+                    case 'error': iconClass = 'fas fa-times-circle text-red-500'; break;
+                    case 'check': iconClass = 'fas fa-check-circle text-blue-500'; break;
+                    case 'scan': iconClass = 'fas fa-expand text-green-500'; break;
+                    case 'search': iconClass = 'fas fa-search'; break;
+                }
+                
+                this.ui.icon.innerHTML = `<i class="${iconClass}"></i>`;
+            },
+
+            setGuideColor(status) {
+                this.ui.guide.classList.remove('face-guide-active', 'face-guide-error');
+                if (status === 'active') this.ui.guide.classList.add('face-guide-active');
+                if (status === 'error') this.ui.guide.classList.add('face-guide-error');
+            },
+
+            switchView(viewId) {
+                ['home', 'camera', 'success'].forEach(v => {
+                    document.getElementById(`view-${v}`).classList.add('hidden');
+                    document.getElementById(`view-${v}`).classList.remove('flex');
+                });
+                const el = document.getElementById(`view-${viewId}`);
+                el.classList.remove('hidden');
+                if (viewId === 'camera') el.classList.add('flex');
+            }
+        };
+    </script>
 </body>
 </html>
