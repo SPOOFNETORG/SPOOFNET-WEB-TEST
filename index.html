@@ -2,467 +2,71 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>myAadhaar | Biometric Authentication</title>
-    
-    <!-- Dependencies -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
-    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        
-        :root { --brand-blue: #0b3fa9; --brand-orange: #f5821f; }
-        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
-        
-        /* Mirror both video and canvas so they overlay perfectly */
-        .mirror { transform: scaleX(-1); }
-
-        /* Animation for the scanning beam */
-        @keyframes scan-line {
-            0% { top: 0%; opacity: 0; }
-            10% { opacity: 1; }
-            90% { opacity: 1; }
-            100% { top: 100%; opacity: 0; }
-        }
-        .scanner-beam {
-            position: absolute; width: 100%; height: 4px;
-            background: #00ff88; box-shadow: 0 0 15px #00ff88;
-            animation: scan-line 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-            display: none;
-            z-index: 20;
-        }
-
-        .glass-panel {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
-        /* SVG Guides */
-        .face-guide-path {
-            fill: none; stroke: rgba(255, 255, 255, 0.6); stroke-width: 2;
-            stroke-dasharray: 20; transition: all 0.3s ease;
-        }
-        .face-guide-active {
-            stroke: #00ff88; stroke-width: 4; stroke-dasharray: 0;
-            filter: drop-shadow(0 0 5px #00ff88);
-        }
-        .face-guide-error { stroke: #ff4444; stroke-width: 4; }
-        
-        /* Debug Border - visual confirmation that canvas exists */
-        .canvas-debug { border: 2px dashed rgba(255, 0, 0, 0.3); }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spoofnet | Identity Verification</title>
+    <link rel="stylesheet" href="style.css">
 </head>
-<body class="min-h-screen flex flex-col text-slate-800">
+<body>
 
-    <!-- 1. LOCKOUT OVERLAY -->
-    <div id="lockout-screen" class="fixed inset-0 bg-slate-900/95 z-[9999] hidden flex-col items-center justify-center text-white p-6 text-center backdrop-blur-sm">
-        <div class="text-6xl mb-4">🔒</div>
-        <h1 class="text-3xl font-bold mb-2">Biometric Lock Active</h1>
-        <p class="text-slate-300 max-w-md mb-8">Multiple spoofing attempts detected. Access suspended.</p>
-        <div class="bg-white/10 p-6 rounded-lg border border-white/20">
-            <p class="text-xs uppercase tracking-widest text-slate-400 mb-2">Unlocks In</p>
-            <div id="lockout-timer" class="text-3xl font-mono font-bold">Calculating...</div>
+    <div id="introSlides" class="slides-overlay">
+        <div class="slide-card">
+            <div id="slideContent">
+                <div class="slide active" data-step="1">
+                    <div class="slide-icon">🛡️</div>
+                    <h2>Secure Your Identity</h2>
+                    <p>Spoofnet helps protect your account from unauthorized access using advanced biometric verification.</p>
+                </div>
+                <div class="slide" data-step="2">
+                    <div class="slide-icon">🔄</div>
+                    <h2>Head Rotation Scan</h2>
+                    <p>In the next step, you'll be asked to move your head slowly in different directions to confirm liveness.</p>
+                </div>
+                <div class="slide" data-step="3">
+                    <div class="slide-icon">📸</div>
+                    <h2>Ready to start?</h2>
+                    <p>Ensure you are in a well-lit room and remove any hats or sunglasses before proceeding.</p>
+                </div>
+            </div>
+            
+            <div class="slide-footer">
+                <div class="dots" id="slideDots">
+                    <span class="dot active"></span>
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                </div>
+                <button id="nextSlideBtn" class="realistic-btn">Next</button>
+            </div>
         </div>
-        <button onclick="app.devReset()" class="mt-12 text-xs text-slate-500 hover:text-white underline">Developer Reset</button>
     </div>
 
-    <!-- Navbar -->
-    <nav class="bg-white shadow-sm z-50 sticky top-0 border-b border-slate-200">
-        <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-                <img src="https://upload.wikimedia.org/wikipedia/en/c/cf/Aadhaar_Logo.svg" class="h-8 md:h-10" alt="Aadhaar">
-                <div class="h-8 w-px bg-slate-200 mx-1"></div>
-                <div class="flex flex-col">
-                    <span class="text-[10px] md:text-xs font-bold text-slate-700 uppercase">Unique Identification Authority of India</span>
-                    <span class="text-[9px] md:text-[10px] text-slate-500">Government of India</span>
-                </div>
+    <div id="mainDashboard" class="dashboard-container hidden">
+        <div class="verification-card">
+            <div class="status-badge">Identity Pending</div>
+            <h1>Spoofnet Portal</h1>
+            <p class="description">Slides completed. You are now ready to begin the biometric scan.</p>
+            <button id="getStartedBtn" class="realistic-btn">Begin Scan</button>
+        </div>
+    </div>
+
+    <div id="verifyModal" class="modal-overlay">
+        <div class="modal-box">
+            <h2 id="stepTitle">Step 1: Rotation</h2>
+            <p id="stepInstruction">Initializing...</p>
+            <div class="camera-wrapper">
+                <div class="laser"></div>
+                <video id="webcam" autoplay playsinline></video>
+            </div>
+            <div class="progress-container">
+                <div id="progressFill" class="progress-fill"></div>
+            </div>
+            <div id="successContent" class="hidden">
+                <div class="success-icon">✓</div>
+                <h3>Success!</h3>
+                <p>Identity confirmed.</p>
             </div>
         </div>
-    </nav>
+    </div>
 
-    <!-- Main Container -->
-    <main class="flex-grow flex items-center justify-center p-4 relative overflow-hidden">
-        <div class="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-blue-50 to-transparent -z-10"></div>
-
-        <!-- VIEW: HOME -->
-        <div id="view-home" class="w-full max-w-2xl bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100">
-            <div class="p-8 md:p-10 text-center">
-                <div class="w-20 h-20 bg-blue-50 text-blue-700 rounded-full flex items-center justify-center mx-auto mb-6 text-3xl shadow-sm">
-                    <i class="fas fa-fingerprint"></i>
-                </div>
-                <h1 class="text-2xl md:text-3xl font-bold text-slate-900 mb-3">Biometric Verification</h1>
-                <p class="text-slate-500 mb-8 max-w-md mx-auto">
-                    Secure active liveness detection. Please ensure good lighting and remove face coverings.
-                </p>
-                <button onclick="app.startFlow()" class="w-full md:w-auto px-8 py-3 bg-[#0b3fa9] hover:bg-[#093285] text-white rounded-lg font-semibold shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 mx-auto">
-                    <span>Start Verification</span>
-                    <i class="fas fa-arrow-right text-sm"></i>
-                </button>
-            </div>
-        </div>
-
-        <!-- VIEW: CAMERA -->
-        <div id="view-camera" class="hidden w-full max-w-4xl flex-col items-center">
-            <div class="w-full max-w-lg mb-4 flex justify-between items-center px-2">
-                <button onclick="location.reload()" class="text-slate-400 hover:text-slate-600 text-sm flex items-center gap-2">
-                    <i class="fas fa-times-circle"></i> Cancel
-                </button>
-                <div class="flex items-center gap-2">
-                    <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                    <span class="text-xs font-mono text-slate-500">ATTEMPT <span id="attempt-cnt">1</span>/2</span>
-                </div>
-            </div>
-
-            <!-- Video Wrapper -->
-            <div class="relative w-full max-w-[400px] aspect-[3/4] md:aspect-[4/3] bg-black rounded-2xl overflow-hidden shadow-2xl border-4 border-white ring-1 ring-slate-200">
-                
-                <!-- 1. Video Element -->
-                <video id="webcam" class="absolute inset-0 w-full h-full object-cover mirror" playsinline autoplay muted></video>
-                
-                <!-- 2. The HTML Canvas (Debug border added) -->
-                <!-- Note: 'object-cover' ensures it matches the video stretch -->
-                <canvas id="overlay" class="absolute inset-0 w-full h-full mirror canvas-debug"></canvas>
-                
-                <!-- 3. Hidden Canvas for processing ONNX inputs -->
-                <canvas id="process-canvas" width="224" height="224" class="hidden"></canvas>
-                
-                <!-- 4. SVG Guides (Passive overlay) -->
-                <svg class="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
-                    <path id="face-guide" d="M30,30 Q50,10 70,30 Q90,60 50,90 Q10,60 30,30" class="face-guide-path" vector-effect="non-scaling-stroke" />
-                </svg>
-
-                <div id="scan-beam" class="scanner-beam"></div>
-
-                <div class="absolute bottom-6 inset-x-4 z-30 flex flex-col items-center gap-3">
-                    <div id="challenge-progress" class="w-full max-w-[200px] h-1.5 bg-white/20 rounded-full overflow-hidden backdrop-blur-sm hidden">
-                        <div id="progress-fill" class="h-full bg-green-400 w-0 transition-all duration-300"></div>
-                    </div>
-                    <div class="glass-panel px-6 py-3 rounded-full shadow-lg flex items-center gap-3">
-                        <div id="status-icon" class="text-slate-700"><i class="fas fa-spinner fa-spin"></i></div>
-                        <span id="instruction-text" class="text-sm font-semibold text-slate-800">Initializing...</span>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="mt-4 flex flex-col items-center gap-1">
-                <p class="text-xs text-slate-400">Processing: MobileNetV3 (FP16)</p>
-                <p class="text-xs font-mono text-blue-400" id="latency-display">Latency: 0ms</p>
-            </div>
-        </div>
-
-        <!-- VIEW: SUCCESS -->
-        <div id="view-success" class="hidden w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100 text-center p-8">
-            <div class="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <i class="fas fa-check text-green-600 text-3xl"></i>
-            </div>
-            <h2 class="text-2xl font-bold text-slate-800 mb-2">Verification Successful</h2>
-            <p class="text-slate-500 mb-8">Identity confirmed. Redirecting...</p>
-            <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                <div class="h-full bg-green-500 animate-[width-to-100_2s_ease-out_forwards]" style="width: 0%"></div>
-            </div>
-            <style>@keyframes width-to-100 { to { width: 100%; } }</style>
-        </div>
-    </main>
-
-    <script>
-        const app = {
-            // --- CONFIGURATION ---
-            onnxPath: './antispoof_model.onnx', // Ensure file exists!
-            threshold: 0.65,
-            maxAttempts: 2,
-            lockoutDays: 15,
-            inputSize: 224,
-            
-            // --- STATE ---
-            faceModel: null,
-            onnxSession: null,
-            video: null, canvas: null, ctx: null, stream: null,
-            isDetecting: false,
-            state: 'IDLE',
-            lastNoseX: 0,
-            challengeProgress: 0,
-            attempts: parseInt(localStorage.getItem('uidai_attempts')) || 0,
-
-            ui: {
-                guide: document.getElementById('face-guide'),
-                text: document.getElementById('instruction-text'),
-                icon: document.getElementById('status-icon'),
-                beam: document.getElementById('scan-beam'),
-                progress: document.getElementById('challenge-progress'),
-                fill: document.getElementById('progress-fill'),
-                latency: document.getElementById('latency-display')
-            },
-
-            // --- 1. SECURITY CHECK ---
-            checkLockout() {
-                const expiry = localStorage.getItem('uidai_lockout');
-                if (expiry && Date.now() < parseInt(expiry)) {
-                    document.getElementById('lockout-screen').style.display = 'flex';
-                    setInterval(() => {
-                        const diff = parseInt(expiry) - Date.now();
-                        const d = Math.floor(diff/(1000*60*60*24));
-                        const h = Math.floor((diff/(1000*60*60))%24);
-                        const m = Math.floor((diff/1000/60)%60);
-                        const s = Math.floor((diff/1000)%60);
-                        document.getElementById('lockout-timer').innerText = `${d}d ${h}h ${m}m ${s}s`;
-                    }, 1000);
-                    return true;
-                }
-                return false;
-            },
-
-            devReset() { localStorage.clear(); location.reload(); },
-
-            // --- 2. INITIALIZATION ---
-            async startFlow() {
-                if (this.checkLockout()) return;
-                
-                this.switchView('camera');
-                document.getElementById('attempt-cnt').innerText = (this.attempts + 1);
-
-                try {
-                    this.updateStatus('Loading AI Models...', 'loading');
-                    
-                    const [faceModel, onnxSession] = await Promise.all([
-                        blazeface.load(),
-                        ort.InferenceSession.create(this.onnxPath, { executionProviders: ['wasm'] })
-                    ]);
-                    
-                    this.faceModel = faceModel;
-                    this.onnxSession = onnxSession;
-                    
-                    this.updateStatus('Accessing Camera...', 'camera');
-                    
-                    this.stream = await navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
-                        audio: false
-                    });
-
-                    this.video = document.getElementById('webcam');
-                    this.canvas = document.getElementById('overlay');
-                    this.ctx = this.canvas.getContext('2d');
-                    this.video.srcObject = this.stream;
-                    
-                    this.video.onloadedmetadata = () => {
-                        this.video.play();
-                        // Intrinsic Sizing: Match Canvas resolution to Webcam resolution (e.g. 1280x720)
-                        this.canvas.width = this.video.videoWidth;
-                        this.canvas.height = this.video.videoHeight;
-                        
-                        this.isDetecting = true;
-                        this.detectionLoop();
-                    };
-
-                } catch (err) {
-                    console.error(err);
-                    alert("Error: " + err.message);
-                    location.reload();
-                }
-            },
-
-            // --- 3. MAIN LOOP ---
-            async detectionLoop() {
-                if (!this.isDetecting) return;
-
-                // Ensure canvas size stays synced if window resizes
-                if (this.canvas.width !== this.video.videoWidth) {
-                     this.canvas.width = this.video.videoWidth;
-                     this.canvas.height = this.video.videoHeight;
-                }
-                
-                // Clear previous frame
-                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-
-                const predictions = await this.faceModel.estimateFaces(this.video, false);
-
-                if (predictions.length > 0) {
-                    const face = predictions[0];
-                    const start = face.topLeft;
-                    const end = face.bottomRight;
-                    
-                    // Direct coordinates (No scaling needed because Canvas == Video)
-                    const x = start[0];
-                    const y = start[1];
-                    const w = end[0] - start[0];
-                    const h = end[1] - start[1];
-
-                    // Draw Detection Box
-                    this.ctx.strokeStyle = '#00ff00';
-                    this.ctx.lineWidth = 4;
-                    this.ctx.strokeRect(x, y, w, h);
-
-                    // Check Centering relative to Resolution
-                    const centerX = x + w/2;
-                    const centerY = y + h/2;
-                    const isCentered = Math.abs(centerX - (this.canvas.width/2)) < (this.canvas.width * 0.25);
-                    const isClose = w > (this.canvas.width * 0.2); // Face must take up >20% width
-
-                    if (!isClose) {
-                        this.updateStatus('Move Closer', 'warning');
-                        this.setGuideColor('default');
-                    } else if (!isCentered) {
-                        this.updateStatus('Center Your Face', 'warning');
-                        this.setGuideColor('default');
-                    } else {
-                        this.handleChallenge(face, predictions[0]); 
-                    }
-                } else {
-                    this.updateStatus('Looking for Face...', 'search');
-                    this.setGuideColor('error');
-                    this.resetChallenge();
-                }
-
-                requestAnimationFrame(() => this.detectionLoop());
-            },
-
-            // --- 4. ACTIVE CHALLENGE ---
-            handleChallenge(displayFace, rawFace) {
-                const noseX = displayFace.landmarks[2][0];
-                
-                if (this.state === 'IDLE') {
-                    this.state = 'CHALLENGE_ACTIVE';
-                    this.lastNoseX = noseX;
-                    this.updateStatus('Turn Head Left & Right', 'scan');
-                    this.setGuideColor('active');
-                    this.ui.progress.classList.remove('hidden');
-                }
-
-                if (this.state === 'CHALLENGE_ACTIVE') {
-                    const diff = Math.abs(noseX - this.lastNoseX);
-                    if (diff > 0.5 && diff < 50) this.challengeProgress += diff * 0.8; 
-                    this.lastNoseX = noseX;
-
-                    this.ui.fill.style.width = `${Math.min(100, this.challengeProgress)}%`;
-
-                    if (this.challengeProgress >= 100) {
-                        this.runModelInference(rawFace);
-                    }
-                }
-            },
-
-            resetChallenge() {
-                this.state = 'IDLE';
-                this.challengeProgress = 0;
-                this.ui.progress.classList.add('hidden');
-            },
-
-            // --- 5. NEURAL INFERENCE ---
-            async runModelInference(facePrediction) {
-                this.isDetecting = false; 
-                this.updateStatus('Verifying Biometrics...', 'loading');
-                this.ui.beam.style.display = 'block';
-
-                try {
-                    const t0 = performance.now();
-                    const pCanvas = document.getElementById('process-canvas');
-                    const pCtx = pCanvas.getContext('2d');
-                    
-                    const start = facePrediction.topLeft;
-                    const end = facePrediction.bottomRight;
-                    const w = end[0] - start[0];
-                    const h = end[1] - start[1];
-                    const pad = w * 0.1;
-
-                    pCtx.drawImage(
-                        this.video, 
-                        start[0] - pad, start[1] - pad, w + (pad*2), h + (pad*2), 
-                        0, 0, this.inputSize, this.inputSize
-                    );
-
-                    const imgData = pCtx.getImageData(0, 0, this.inputSize, this.inputSize);
-                    const float32Data = new Float32Array(3 * this.inputSize * this.inputSize);
-                    
-                    const mean = [0.485, 0.456, 0.406];
-                    const std = [0.229, 0.224, 0.225];
-
-                    for (let i = 0; i < this.inputSize * this.inputSize; i++) {
-                        const r = imgData.data[i * 4] / 255.0;
-                        const g = imgData.data[i * 4 + 1] / 255.0;
-                        const b = imgData.data[i * 4 + 2] / 255.0;
-
-                        float32Data[i] = (r - mean[0]) / std[0];
-                        float32Data[i + (this.inputSize**2)] = (g - mean[1]) / std[1];
-                        float32Data[i + (2 * (this.inputSize**2))] = (b - mean[2]) / std[2];
-                    }
-
-                    const inputTensor = new ort.Tensor('float32', float32Data, [1, 3, this.inputSize, this.inputSize]);
-                    const results = await this.onnxSession.run({ input: inputTensor });
-                    const score = results.output.data[0];
-
-                    this.ui.latency.innerText = `Latency: ${Math.round(performance.now() - t0)}ms`;
-
-                    if (score > this.threshold) {
-                        this.complete(true);
-                    } else {
-                        this.complete(false);
-                    }
-
-                } catch (e) {
-                    console.error(e);
-                    alert("Inference Failed. Resetting.");
-                    location.reload();
-                }
-            },
-
-            complete(success) {
-                this.ui.beam.style.display = 'none';
-                if(success) {
-                    localStorage.setItem('uidai_attempts', '0');
-                    this.switchView('success');
-                    this.stream.getTracks().forEach(track => track.stop());
-                } else {
-                    this.attempts++;
-                    localStorage.setItem('uidai_attempts', this.attempts);
-                    
-                    if (this.attempts >= this.maxAttempts) {
-                        const expiry = Date.now() + (this.lockoutDays * 24 * 60 * 60 * 1000);
-                        localStorage.setItem('uidai_lockout', expiry);
-                        location.reload();
-                    } else {
-                        alert(`Spoof Detected! ${this.maxAttempts - this.attempts} attempt remaining.`);
-                        location.reload();
-                    }
-                }
-            },
-
-            // --- UI HELPERS ---
-            updateStatus(msg, type) {
-                this.ui.text.innerText = msg;
-                let iconClass = 'fas fa-circle';
-                switch(type) {
-                    case 'loading': iconClass = 'fas fa-cog fa-spin'; break;
-                    case 'camera': iconClass = 'fas fa-video'; break;
-                    case 'warning': iconClass = 'fas fa-exclamation-triangle text-yellow-500'; break;
-                    case 'error': iconClass = 'fas fa-times-circle text-red-500'; break;
-                    case 'check': iconClass = 'fas fa-check-circle text-blue-500'; break;
-                    case 'scan': iconClass = 'fas fa-expand text-green-500'; break;
-                    case 'search': iconClass = 'fas fa-search'; break;
-                }
-                this.ui.icon.innerHTML = `<i class="${iconClass}"></i>`;
-            },
-            setGuideColor(status) {
-                this.ui.guide.classList.remove('face-guide-active', 'face-guide-error');
-                if (status === 'active') this.ui.guide.classList.add('face-guide-active');
-                if (status === 'error') this.ui.guide.classList.add('face-guide-error');
-            },
-            switchView(viewId) {
-                ['home', 'camera', 'success'].forEach(v => {
-                    const el = document.getElementById(`view-${v}`);
-                    el.classList.add('hidden');
-                    el.classList.remove('flex');
-                });
-                const el = document.getElementById(`view-${viewId}`);
-                el.classList.remove('hidden');
-                if (viewId === 'camera') el.classList.add('flex');
-            }
-        };
-
-        window.onload = () => app.checkLockout();
-    </script>
+    <script src="script.js"></script>
 </body>
 </html>
